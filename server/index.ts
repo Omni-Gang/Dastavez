@@ -7,7 +7,8 @@ import WebSocket from "ws";
 import cors from "cors";
 import { v4 as uuidv4 } from "uuid";
 
-// Document storage - in production, use Redis or database
+// Document storage - in production, use Redis or GraphQL for persistence
+// Here we use in-memory storage for simplicity
 const documents = new Map<string, Y.Doc>();
 const documentMetadata = new Map<
   string,
