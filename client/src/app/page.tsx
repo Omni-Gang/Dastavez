@@ -21,63 +21,6 @@ import {
   Copy,
 } from "lucide-react";
 
-// Enhanced schema similar to Google Docs
-const schema = new Schema({
-  nodes: {
-    doc: {
-      content: "block+",
-    },
-    paragraph: {
-      group: "block",
-      content: "inline*",
-      attrs: { align: { default: null } },
-      parseDOM: [{ tag: "p" }],
-      toDOM(node) {
-        const attrs: any = {};
-        if (node.attrs.align) attrs.style = `text-align: ${node.attrs.align}`;
-        return ["p", attrs, 0];
-      },
-    },
-    heading: {
-      group: "block",
-      content: "inline*",
-      attrs: { level: { default: 1 } },
-      defining: true,
-      parseDOM: [
-        { tag: "h1", attrs: { level: 1 } },
-        { tag: "h2", attrs: { level: 2 } },
-        { tag: "h3", attrs: { level: 3 } },
-      ],
-      toDOM(node) {
-        return [`h${node.attrs.level}`, 0];
-      },
-    },
-    text: {
-      group: "inline",
-    },
-  },
-  marks: {
-    strong: {
-      parseDOM: [{ tag: "strong" }, { tag: "b" }],
-      toDOM() {
-        return ["strong", 0];
-      },
-    },
-    em: {
-      parseDOM: [{ tag: "i" }, { tag: "em" }],
-      toDOM() {
-        return ["em", 0];
-      },
-    },
-    underline: {
-      parseDOM: [{ tag: "u" }],
-      toDOM() {
-        return ["u", 0];
-      },
-    },
-  },
-});
-
 interface ConnectedUser {
   name: string;
   color: string;
@@ -93,6 +36,7 @@ export default function Home() {
   const [docTitle, setDocTitle] = useState("Untitled Document");
   const [isConnected, setIsConnected] = useState(false);
   const [userCount, setUserCount] = useState(0);
+  const metadataMapRef = useRef<Y.Map<any> | null>(null);
 
   const generateRandomName = () => {
     const adjectives = ["Smart", "Creative", "Brilliant", "Quick", "Clever"];
@@ -166,8 +110,9 @@ export default function Home() {
       ydoc
     );
     const yXmlFragment = ydoc.getXmlFragment("prosemirror");
+    const metadataMap = ydoc.getMap("metadata");
+    metadataMapRef.current = metadataMap;
 
-    // Set up user identity
     const userName = generateRandomName();
     const userColor = generateRandomColor();
 
@@ -177,12 +122,10 @@ export default function Home() {
       cursor: null,
     });
 
-    // Connection status
     provider.on("status", ({ status }: { status: string }) => {
       setIsConnected(status === "connected");
     });
 
-    // Track awareness changes for user count and cursor positions
     provider.awareness.on("change", () => {
       const states = provider.awareness.getStates();
       const users = new Map<number, ConnectedUser>();
@@ -203,7 +146,52 @@ export default function Home() {
 
     const view = new EditorView(editorRef.current, {
       state: EditorState.create({
-        schema,
+        schema: new Schema({
+          nodes: {
+            doc: { content: "block+" },
+            paragraph: {
+              group: "block",
+              content: "inline*",
+              attrs: { align: { default: null } },
+              parseDOM: [{ tag: "p" }],
+              toDOM(node) {
+                const attrs: any = {};
+                if (node.attrs.align)
+                  attrs.style = `text-align: ${node.attrs.align}`;
+                return ["p", attrs, 0];
+              },
+            },
+            heading: {
+              group: "block",
+              content: "inline*",
+              attrs: { level: { default: 1 } },
+              defining: true,
+              parseDOM: [
+                { tag: "h1", attrs: { level: 1 } },
+                { tag: "h2", attrs: { level: 2 } },
+                { tag: "h3", attrs: { level: 3 } },
+              ],
+              toDOM(node) {
+                return [`h${node.attrs.level}`, 0];
+              },
+            },
+            text: { group: "inline" },
+          },
+          marks: {
+            strong: {
+              parseDOM: [{ tag: "strong" }, { tag: "b" }],
+              toDOM: () => ["strong", 0],
+            },
+            em: {
+              parseDOM: [{ tag: "i" }, { tag: "em" }],
+              toDOM: () => ["em", 0],
+            },
+            underline: {
+              parseDOM: [{ tag: "u" }],
+              toDOM: () => ["u", 0],
+            },
+          },
+        }),
         plugins: [
           ySyncPlugin(yXmlFragment),
           yCursorPlugin(provider.awareness, {
@@ -251,7 +239,6 @@ export default function Home() {
         spellcheck: "true",
       },
       handleKeyDown: (view, event) => {
-        // Update cursor position for awareness
         setTimeout(() => {
           const { from } = view.state.selection;
           provider.awareness.setLocalStateField("cursor", { anchor: from });
@@ -266,14 +253,31 @@ export default function Home() {
     });
 
     viewRef.current = view;
-
-    // Focus the editor
     view.focus();
 
     return () => {
       view.destroy();
       provider.destroy();
       ydoc.destroy();
+    };
+  }, []);
+
+  useEffect(() => {
+    const map = metadataMapRef.current;
+    if (!map) return;
+    const titleFromYjs = String(map.get("title") || "Untitled Document");
+    setDocTitle(titleFromYjs);
+
+    const observer = (event: Y.YMapEvent<any>) => {
+      if (event.keysChanged.has("title")) {
+        const updatedTitle = String(map.get("title") || "Untitled Document");
+        setDocTitle(updatedTitle);
+      }
+    };
+
+    map.observe(observer);
+    return () => {
+      map.unobserve(observer);
     };
   }, []);
 
@@ -286,13 +290,18 @@ export default function Home() {
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2">
                 <FileText className="w-6 h-6 text-blue-600" />
-                <input
-                  type="text"
-                  value={docTitle}
-                  onChange={(e) => setDocTitle(e.target.value)}
-                  className="text-lg font-medium bg-transparent border-none outline-none focus:bg-gray-50 px-2 py-1 rounded"
-                  placeholder="Untitled Document"
-                />
+                                          <input
+                            type="text"
+                            value={docTitle}
+                            onChange={(e) => {
+    const newTitle = e.target.value;
+    setDocTitle(newTitle); // update local title
+    metadataMapRef.current?.set("title", newTitle); // update shared Y.Map
+  }}
+                            className="text-lg font-medium bg-transparent border-none outline-none focus:bg-gray-50 px-2 py-1 rounded"
+                            placeholder="Untitled Document"
+                          />
+
               </div>
               <div className="flex items-center space-x-2">
                 <div
@@ -451,3 +460,4 @@ export default function Home() {
     </div>
   );
 }
+
