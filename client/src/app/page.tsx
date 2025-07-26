@@ -27,6 +27,32 @@ interface ConnectedUser {
   cursor?: number;
 }
 
+// Move these outside the component to avoid duplication
+const adjectives = ["Smart", "Creative", "Brilliant", "Quick", "Clever"];
+const animals = ["Fox", "Eagle", "Wolf", "Lion", "Bear"];
+const colors = [
+  "#FF6B6B",
+  "#4ECDC4",
+  "#45B7D1",
+  "#96CEB4",
+  "#FFEAA7",
+  "#DDA0DD",
+  "#98D8C8",
+  "#F7DC6F",
+  "#BB8FCE",
+  "#85C1E9",
+];
+
+function generateRandomName() {
+  const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const animal = animals[Math.floor(Math.random() * animals.length)];
+  return `${adj} ${animal}`;
+}
+
+function generateRandomColor() {
+  return colors[Math.floor(Math.random() * colors.length)];
+}
+
 export default function Home() {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -37,30 +63,6 @@ export default function Home() {
   const [isConnected, setIsConnected] = useState(false);
   const [userCount, setUserCount] = useState(0);
   const metadataMapRef = useRef<Y.Map<any> | null>(null);
-
-  const generateRandomName = () => {
-    const adjectives = ["Smart", "Creative", "Brilliant", "Quick", "Clever"];
-    const animals = ["Fox", "Eagle", "Wolf", "Lion", "Bear"];
-    const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
-    const animal = animals[Math.floor(Math.random() * animals.length)];
-    return `${adj} ${animal}`;
-  };
-
-  const generateRandomColor = () => {
-    const colors = [
-      "#FF6B6B",
-      "#4ECDC4",
-      "#45B7D1",
-      "#96CEB4",
-      "#FFEAA7",
-      "#DDA0DD",
-      "#98D8C8",
-      "#F7DC6F",
-      "#BB8FCE",
-      "#85C1E9",
-    ];
-    return colors[Math.floor(Math.random() * colors.length)];
-  };
 
   const handleUndo = () => {
     if (viewRef.current) {
@@ -290,18 +292,17 @@ export default function Home() {
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2">
                 <FileText className="w-6 h-6 text-blue-600" />
-                                          <input
-                            type="text"
-                            value={docTitle}
-                            onChange={(e) => {
-    const newTitle = e.target.value;
-    setDocTitle(newTitle); // update local title
-    metadataMapRef.current?.set("title", newTitle); // update shared Y.Map
-  }}
-                            className="text-lg font-medium bg-transparent border-none outline-none focus:bg-gray-50 px-2 py-1 rounded"
-                            placeholder="Untitled Document"
-                          />
-
+                <input
+                  type="text"
+                  value={docTitle}
+                  onChange={(e) => {
+                    const newTitle = e.target.value;
+                    setDocTitle(newTitle); // update local title
+                    metadataMapRef.current?.set("title", newTitle); // update shared Y.Map
+                  }}
+                  className="text-lg font-medium bg-transparent border-none outline-none focus:bg-gray-50 px-2 py-1 rounded"
+                  placeholder="Untitled Document"
+                />
               </div>
               <div className="flex items-center space-x-2">
                 <div
@@ -460,4 +461,3 @@ export default function Home() {
     </div>
   );
 }
-
