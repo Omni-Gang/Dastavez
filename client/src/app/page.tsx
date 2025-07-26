@@ -18,74 +18,75 @@ import {
   Redo2,
   Download,
   Share2,
-  Copy,
 } from "lucide-react";
-
-// ✅ Maruti-NEW : Add zoom state
-const ZOOM_LEVELS = [50, 75, 100, 125, 150, 200];
-
-
-// Enhanced schema similar to Google Docs
-const schema = new Schema({
-  nodes: {
-    doc: {
-      content: "block+",
-    },
-    paragraph: {
-      group: "block",
-      content: "inline*",
-      attrs: { align: { default: null } },
-      parseDOM: [{ tag: "p" }],
-      toDOM(node) {
-        const attrs: any = {};
-        if (node.attrs.align) attrs.style = `text-align: ${node.attrs.align}`;
-        return ["p", attrs, 0];
-      },
-    },
-    heading: {
-      group: "block",
-      content: "inline*",
-      attrs: { level: { default: 1 } },
-      defining: true,
-      parseDOM: [
-        { tag: "h1", attrs: { level: 1 } },
-        { tag: "h2", attrs: { level: 2 } },
-        { tag: "h3", attrs: { level: 3 } },
-      ],
-      toDOM(node) {
-        return [`h${node.attrs.level}`, 0];
-      },
-    },
-    text: {
-      group: "inline",
-    },
-  },
-  marks: {
-    strong: {
-      parseDOM: [{ tag: "strong" }, { tag: "b" }],
-      toDOM() {
-        return ["strong", 0];
-      },
-    },
-    em: {
-      parseDOM: [{ tag: "i" }, { tag: "em" }],
-      toDOM() {
-        return ["em", 0];
-      },
-    },
-    underline: {
-      parseDOM: [{ tag: "u" }],
-      toDOM() {
-        return ["u", 0];
-      },
-    },
-  },
-});
 
 interface ConnectedUser {
   name: string;
   color: string;
   cursor?: number;
+}
+
+const generateRandomName = () => {
+  const adjectives = ["Smart", "Creative", "Brilliant", "Quick", "Clever"];
+  const animals = ["Fox", "Eagle", "Wolf", "Lion", "Bear"];
+  const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const animal = animals[Math.floor(Math.random() * animals.length)];
+  return `${adj} ${animal}`;
+};
+
+const generateRandomColor = () => {
+  const colors = [
+    "#FF6B6B",
+    "#4ECDC4",
+    "#45B7D1",
+    "#96CEB4",
+    "#FFEAA7",
+    "#DDA0DD",
+    "#98D8C8",
+    "#F7DC6F",
+    "#BB8FCE",
+    "#85C1E9",
+  ];
+  return colors[Math.floor(Math.random() * colors.length)];
+};
+
+function buildCursor(user: any) {
+  const cursor = document.createElement("span");
+  cursor.className = "cursor";
+  cursor.style.borderLeft = `2px solid ${user.color}`;
+  cursor.style.position = "relative";
+  cursor.style.marginLeft = "-1px";
+  cursor.style.height = "1.2em";
+  cursor.style.display = "inline-block";
+
+  const label = document.createElement("div");
+  label.textContent = user.name;
+  label.style.position = "absolute";
+  label.style.top = "-25px";
+  label.style.backgroundColor = user.color;
+  label.style.color = "white";
+  label.style.padding = "2px 6px";
+  label.style.borderRadius = "3px";
+  label.style.fontSize = "12px";
+  label.style.whiteSpace = "nowrap";
+  label.style.pointerEvents = "none";
+  label.style.zIndex = "1000";
+
+  cursor.appendChild(label);
+  return cursor;
+}
+
+function buildSelection(user: any) {
+  return { style: `background-color: ${user.color}20` };
+}
+
+function updateCursorPosition(view: EditorView, provider: WebsocketProvider) {
+  const { from } = view.state.selection;
+  provider.awareness.setLocalStateField("cursor", { anchor: from });
+}
+
+function getTitleFromMap(map: Y.Map<any>): string {
+  return String(map.get("title") || "Untitled Document");
 }
 
 export default function Home() {
@@ -97,34 +98,7 @@ export default function Home() {
   const [docTitle, setDocTitle] = useState("Untitled Document");
   const [isConnected, setIsConnected] = useState(false);
   const [userCount, setUserCount] = useState(0);
-
-   const [zoomLevel, setZoomLevel] = useState(100); //✅ Maruti-NEW :[ZOOM] 
-
-
-
-  const generateRandomName = () => {
-    const adjectives = ["Smart", "Creative", "Brilliant", "Quick", "Clever"];
-    const animals = ["Fox", "Eagle", "Wolf", "Lion", "Bear"];
-    const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
-    const animal = animals[Math.floor(Math.random() * animals.length)];
-    return `${adj} ${animal}`;
-  };
-
-  const generateRandomColor = () => {
-    const colors = [
-      "#FF6B6B",
-      "#4ECDC4",
-      "#45B7D1",
-      "#96CEB4",
-      "#FFEAA7",
-      "#DDA0DD",
-      "#98D8C8",
-      "#F7DC6F",
-      "#BB8FCE",
-      "#85C1E9",
-    ];
-    return colors[Math.floor(Math.random() * colors.length)];
-  };
+  const metadataMapRef = useRef<Y.Map<any> | null>(null);
 
   const handleUndo = () => {
     if (viewRef.current) {
@@ -147,6 +121,9 @@ export default function Home() {
       console.error("Failed to copy URL:", err);
     }
   };
+  const [zoomLevel, setZoomLevel] = useState(100); // default 100%
+const ZOOM_LEVELS = [25, 50, 75, 100, 125, 150, 200];
+
 
   const handleExport = () => {
     if (viewRef.current) {
@@ -168,14 +145,11 @@ export default function Home() {
 
     const ydoc = new Y.Doc();
     const roomName = window.location.pathname.slice(1) || "default-room";
-    const provider = new WebsocketProvider(
-      "ws://localhost:1234",
-      roomName,
-      ydoc
-    );
+    const provider = new WebsocketProvider("ws://localhost:1234", roomName, ydoc);
     const yXmlFragment = ydoc.getXmlFragment("prosemirror");
+    const metadataMap = ydoc.getMap("metadata");
+    metadataMapRef.current = metadataMap;
 
-    // Set up user identity
     const userName = generateRandomName();
     const userColor = generateRandomColor();
 
@@ -185,12 +159,10 @@ export default function Home() {
       cursor: null,
     });
 
-    // Connection status
     provider.on("status", ({ status }: { status: string }) => {
       setIsConnected(status === "connected");
     });
 
-    // Track awareness changes for user count and cursor positions
     provider.awareness.on("change", () => {
       const states = provider.awareness.getStates();
       const users = new Map<number, ConnectedUser>();
@@ -211,38 +183,57 @@ export default function Home() {
 
     const view = new EditorView(editorRef.current, {
       state: EditorState.create({
-        schema,
+        schema: new Schema({
+          nodes: {
+            doc: { content: "block+" },
+            paragraph: {
+              group: "block",
+              content: "inline*",
+              attrs: { align: { default: null } },
+              parseDOM: [{ tag: "p" }],
+              toDOM(node) {
+                const attrs: any = {};
+                if (node.attrs.align)
+                  attrs.style = `text-align: ${node.attrs.align}`;
+                return ["p", attrs, 0];
+              },
+            },
+            heading: {
+              group: "block",
+              content: "inline*",
+              attrs: { level: { default: 1 } },
+              defining: true,
+              parseDOM: [
+                { tag: "h1", attrs: { level: 1 } },
+                { tag: "h2", attrs: { level: 2 } },
+                { tag: "h3", attrs: { level: 3 } },
+              ],
+              toDOM(node) {
+                return [`h${node.attrs.level}`, 0];
+              },
+            },
+            text: { group: "inline" },
+          },
+          marks: {
+            strong: {
+              parseDOM: [{ tag: "strong" }, { tag: "b" }],
+              toDOM: () => ["strong", 0],
+            },
+            em: {
+              parseDOM: [{ tag: "i" }, { tag: "em" }],
+              toDOM: () => ["em", 0],
+            },
+            underline: {
+              parseDOM: [{ tag: "u" }],
+              toDOM: () => ["u", 0],
+            },
+          },
+        }),
         plugins: [
           ySyncPlugin(yXmlFragment),
           yCursorPlugin(provider.awareness, {
-            cursorBuilder: (user: any) => {
-              const cursor = document.createElement("span");
-              cursor.className = "cursor";
-              cursor.style.borderLeft = `2px solid ${user.color}`;
-              cursor.style.position = "relative";
-              cursor.style.marginLeft = "-1px";
-              cursor.style.height = "1.2em";
-              cursor.style.display = "inline-block";
-
-              const label = document.createElement("div");
-              label.textContent = user.name;
-              label.style.position = "absolute";
-              label.style.top = "-25px";
-              label.style.backgroundColor = user.color;
-              label.style.color = "white";
-              label.style.padding = "2px 6px";
-              label.style.borderRadius = "3px";
-              label.style.fontSize = "12px";
-              label.style.whiteSpace = "nowrap";
-              label.style.pointerEvents = "none";
-              label.style.zIndex = "1000";
-
-              cursor.appendChild(label);
-              return cursor;
-            },
-            selectionBuilder: (user: any) => {
-              return { style: `background-color: ${user.color}20` };
-            },
+            cursorBuilder: buildCursor,
+            selectionBuilder: buildSelection,
           }),
           yUndoPlugin(),
           history(),
@@ -259,23 +250,16 @@ export default function Home() {
         spellcheck: "true",
       },
       handleKeyDown: (view, event) => {
-        // Update cursor position for awareness
-        setTimeout(() => {
-          const { from } = view.state.selection;
-          provider.awareness.setLocalStateField("cursor", { anchor: from });
-        }, 0);
+        setTimeout(() => updateCursorPosition(view, provider), 0);
         return false;
       },
       handleClick: (view) => {
-        const { from } = view.state.selection;
-        provider.awareness.setLocalStateField("cursor", { anchor: from });
+        updateCursorPosition(view, provider);
         return false;
       },
     });
 
     viewRef.current = view;
-
-    // Focus the editor
     view.focus();
 
     return () => {
@@ -284,6 +268,24 @@ export default function Home() {
       ydoc.destroy();
     };
   }, []);
+
+useEffect(() => {
+  const map = metadataMapRef.current;
+  if (!map) return;
+  setDocTitle(getTitleFromMap(map));
+
+  const observer = (event: Y.YMapEvent<any>) => {
+    if (event.keysChanged.has("title")) {
+      setDocTitle(getTitleFromMap(map));
+    }
+  };
+
+  map.observe(observer);
+  return () => {
+    map.unobserve(observer);
+  };
+}, []);
+
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -294,13 +296,18 @@ export default function Home() {
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2">
                 <FileText className="w-6 h-6 text-blue-600" />
-                <input
-                  type="text"
-                  value={docTitle}
-                  onChange={(e) => setDocTitle(e.target.value)}
-                  className="text-lg font-medium bg-transparent border-none outline-none focus:bg-gray-50 px-2 py-1 rounded"
-                  placeholder="Untitled Document"
-                />
+                                            <input
+                              type="text"
+                              value={docTitle}
+                              onChange={(e) => {
+                                const newTitle = e.target.value;
+                                setDocTitle(newTitle);
+                                metadataMapRef.current?.set("title", newTitle); // ✅ sync to Y.Map
+                              }}
+                              className="text-lg font-medium bg-transparent border-none outline-none focus:bg-gray-50 px-2 py-1 rounded"
+                              placeholder="Untitled Document"
+                            />
+
               </div>
               <div className="flex items-center space-x-2">
                 <div
