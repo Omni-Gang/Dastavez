@@ -45,7 +45,12 @@ app.get("/api/documents", (req, res) => {
 
 app.get("/api/documents/:docId", (req, res) => {
   const { docId } = req.params;
+  console.log(docId);
+
   const metadata = documentMetadata.get(docId);
+  console.log(documentMetadata);
+
+  console.log(metadata);
 
   if (!metadata) {
     return res.status(404).json({ error: "Document not found" });
@@ -130,8 +135,11 @@ const wss = new WebSocket.Server({ server });
 
 // Enhanced WebSocket connection handler
 wss.on("connection", (ws: WebSocket, req: http.IncomingMessage) => {
+  // console.log(req);
+
   const url = req.url || "";
   const docName = url.slice(1).split("?")[0] || "default-room";
+  // console.log(url);
 
   console.log(`📝 New connection to document: ${docName}`);
 
