@@ -2,69 +2,83 @@
 "use client";
 
 import { ReactNode } from "react";
-import {
-  ClerkProvider,
-  SignedIn,
-  SignedOut,
-  SignInButton,
-  SignUpButton,
-  UserButton,
-} from "@clerk/nextjs";
+import { SessionProvider, useSession, signOut } from "next-auth/react";
+import Link from "next/link";
+
+function Header() {
+  const { data: session, status } = useSession();
+
+  return (
+    <header
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "12px 18px",
+        borderBottom: "1px solid rgba(0,0,0,0.06)",
+        gap: 12,
+      }}
+    >
+      <div>
+        <Link
+          href="/"
+          style={{
+            textDecoration: "none",
+            color: "inherit",
+            fontWeight: 600,
+          }}
+        >
+          Collaborative Editor
+        </Link>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        {status === "loading" ? (
+          <div>Loading...</div>
+        ) : session ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span>Hi, {session.user?.name || session.user?.email}</span>
+            <button
+              onClick={() => signOut({ callbackUrl: "/" })}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 6,
+                border: "1px solid #ccc",
+                background: "white",
+                cursor: "pointer",
+              }}
+            >
+              Sign out
+            </button>
+          </div>
+        ) : (
+          <Link
+            href="/landing"
+            style={{
+              padding: "8px 12px",
+              borderRadius: 6,
+              border: "1px solid #ccc",
+              background: "white",
+              textDecoration: "none",
+              color: "inherit",
+            }}
+          >
+            Sign in
+          </Link>
+        )}
+      </div>
+    </header>
+  );
+}
 
 export default function Providers({ children }: { children: ReactNode }) {
-  // Clerk picks up NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY / NEXT_PUBLIC_CLERK_FRONTEND_API automatically
-  // If you want to pass publishableKey explicitly: publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
   return (
-    <ClerkProvider>
+    <SessionProvider>
       <div
         style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}
       >
-        <header
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            padding: "12px 18px",
-            borderBottom: "1px solid rgba(0,0,0,0.06)",
-            gap: 12,
-          }}
-        >
-          <div>
-            <a
-              href="/"
-              style={{
-                textDecoration: "none",
-                color: "inherit",
-                fontWeight: 600,
-              }}
-            >
-              Your App
-            </a>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <SignedOut>
-              <SignInButton>
-                <button style={{ padding: "8px 12px", borderRadius: 6 }}>
-                  Sign in
-                </button>
-              </SignInButton>
-
-              <SignUpButton>
-                <button style={{ padding: "8px 12px", borderRadius: 6 }}>
-                  Sign up
-                </button>
-              </SignUpButton>
-            </SignedOut>
-
-            <SignedIn>
-              <UserButton afterSignOutUrl="/" />
-            </SignedIn>
-          </div>
-        </header>
-
+        <Header />
         <main style={{ flex: 1, padding: 18 }}>{children}</main>
-
         <footer
           style={{
             padding: 12,
@@ -72,9 +86,9 @@ export default function Providers({ children }: { children: ReactNode }) {
             textAlign: "center",
           }}
         >
-          <small>© {new Date().getFullYear()} Your App</small>
+          <small>© {new Date().getFullYear()} Collaborative Editor</small>
         </footer>
       </div>
-    </ClerkProvider>
+    </SessionProvider>
   );
 }

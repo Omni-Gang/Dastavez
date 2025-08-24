@@ -1,16 +1,27 @@
-// client/src/middleware.ts
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { withAuth } from "next-auth/middleware";
 
-export default clerkMiddleware({
-  // optional config here
-});
+export default withAuth(
+  function middleware(req) {
+    // Add any additional middleware logic here
+  },
+  {
+    callbacks: {
+      authorized: ({ token }) => !!token,
+    },
+  }
+);
 
-// Default matcher from Clerk quickstart — runs middleware for app routes & API
 export const config = {
   matcher: [
-    // run on everything except _next static files
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
-    // always run for api routes
-    "/(api|trpc)(.*)",
+    /*
+     * Match all request paths except for the ones starting with:
+     * - api/auth (auth API routes)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - auth/signin (sign in page)
+     * - landing (landing page)
+     */
+    "/((?!api/auth|_next/static|_next/image|favicon.ico|auth/signin|landing).*)",
   ],
 };

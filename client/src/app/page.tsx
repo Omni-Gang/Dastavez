@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import { EditorState } from "prosemirror-state";
@@ -11,14 +13,7 @@ import { keymap } from "prosemirror-keymap";
 import { history, undo, redo } from "prosemirror-history";
 import { ySyncPlugin, yCursorPlugin, yUndoPlugin } from "y-prosemirror";
 import "prosemirror-view/style/prosemirror.css";
-import {
-  Users,
-  FileText,
-  Undo2,
-  Redo2,
-  Download,
-  Share2,
-} from "lucide-react";
+import { Users, FileText, Undo2, Redo2, Download, Share2 } from "lucide-react";
 
 interface ConnectedUser {
   name: string;
@@ -90,6 +85,11 @@ function getTitleFromMap(map: Y.Map<any>): string {
 }
 
 export default function Home() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+
+  // Debug logging
+  console.log("Home component render:", { session: !!session, status });
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [connectedUsers, setConnectedUsers] = useState<
@@ -98,54 +98,32 @@ export default function Home() {
   const [docTitle, setDocTitle] = useState("Untitled Document");
   const [isConnected, setIsConnected] = useState(false);
   const [userCount, setUserCount] = useState(0);
+  const [zoomLevel, setZoomLevel] = useState(100); // default 100%
   const metadataMapRef = useRef<Y.Map<any> | null>(null);
 
-  const handleUndo = () => {
-    if (viewRef.current) {
-      undo(viewRef.current.state, viewRef.current.dispatch);
-    }
-  };
-
-  const handleRedo = () => {
-    if (viewRef.current) {
-      redo(viewRef.current.state, viewRef.current.dispatch);
-    }
-  };
-
-  const handleShare = async () => {
-    const url = window.location.href;
-    try {
-      await navigator.clipboard.writeText(url);
-      alert("Document URL copied to clipboard!");
-    } catch (err) {
-      console.error("Failed to copy URL:", err);
-    }
-  };
-  const [zoomLevel, setZoomLevel] = useState(100); // default 100%
-const ZOOM_LEVELS = [25, 50, 75, 100, 125, 150, 200];
-
-
-  const handleExport = () => {
-    if (viewRef.current) {
-      const content = viewRef.current.state.doc.textContent;
-      const blob = new Blob([content], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${docTitle}.txt`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }
-  };
-
+  // Redirect to landing page if not authenticated
   useEffect(() => {
-    if (!editorRef.current) return;
+    if (status === "unauthenticated") {
+      router.push("/landing");
+    }
+  }, [status, router]);
+
+  // Editor initialization effect
+  useEffect(() => {
+    console.log("Editor effect triggered:", {
+      hasEditorRef: !!editorRef.current,
+      hasSession: !!session,
+      status,
+    });
+    if (!editorRef.current || !session || status !== "authenticated") return;
 
     const ydoc = new Y.Doc();
     const roomName = window.location.pathname.slice(1) || "default-room";
-    const provider = new WebsocketProvider("ws://localhost:1234", roomName, ydoc);
+    const provider = new WebsocketProvider(
+      "ws://localhost:1234",
+      roomName,
+      ydoc
+    );
     const yXmlFragment = ydoc.getXmlFragment("prosemirror");
     const metadataMap = ydoc.getMap("metadata");
     metadataMapRef.current = metadataMap;
@@ -164,21 +142,25 @@ const ZOOM_LEVELS = [25, 50, 75, 100, 125, 150, 200];
     });
 
     provider.awareness.on("change", () => {
-      const states = provider.awareness.getStates();
-      const users = new Map<number, ConnectedUser>();
+      try {
+        const states = provider.awareness.getStates();
+        const users = new Map<number, ConnectedUser>();
 
-      states.forEach((state, clientId) => {
-        if (state.user && clientId !== provider.awareness.clientID) {
-          users.set(clientId, {
-            name: state.user.name,
-            color: state.user.color,
-            cursor: state.cursor?.anchor,
-          });
-        }
-      });
+        states.forEach((state, clientId) => {
+          if (state.user && clientId !== provider.awareness.clientID) {
+            users.set(clientId, {
+              name: state.user.name,
+              color: state.user.color,
+              cursor: state.cursor?.anchor,
+            });
+          }
+        });
 
-      setConnectedUsers(users);
-      setUserCount(states.size);
+        setConnectedUsers(users);
+        setUserCount(states.size);
+      } catch (error) {
+        console.error("Error in awareness change handler:", error);
+      }
     });
 
     const view = new EditorView(editorRef.current, {
@@ -250,11 +232,21 @@ const ZOOM_LEVELS = [25, 50, 75, 100, 125, 150, 200];
         spellcheck: "true",
       },
       handleKeyDown: (view, event) => {
-        setTimeout(() => updateCursorPosition(view, provider), 0);
+        setTimeout(() => {
+          try {
+            updateCursorPosition(view, provider);
+          } catch (error) {
+            console.error("Error updating cursor position:", error);
+          }
+        }, 0);
         return false;
       },
       handleClick: (view) => {
-        updateCursorPosition(view, provider);
+        try {
+          updateCursorPosition(view, provider);
+        } catch (error) {
+          console.error("Error updating cursor position:", error);
+        }
         return false;
       },
     });
@@ -267,25 +259,85 @@ const ZOOM_LEVELS = [25, 50, 75, 100, 125, 150, 200];
       provider.destroy();
       ydoc.destroy();
     };
+  }, [session]);
+
+  // Document title effect
+  useEffect(() => {
+    const map = metadataMapRef.current;
+    if (!map) return;
+
+    try {
+      setDocTitle(getTitleFromMap(map));
+
+      const observer = (event: Y.YMapEvent<any>) => {
+        if (event.keysChanged.has("title")) {
+          setDocTitle(getTitleFromMap(map));
+        }
+      };
+
+      map.observe(observer);
+      return () => {
+        map.unobserve(observer);
+      };
+    } catch (error) {
+      console.error("Error in document title effect:", error);
+    }
   }, []);
 
-useEffect(() => {
-  const map = metadataMapRef.current;
-  if (!map) return;
-  setDocTitle(getTitleFromMap(map));
+  // Show loading while checking authentication
+  if (status === "loading") {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
-  const observer = (event: Y.YMapEvent<any>) => {
-    if (event.keysChanged.has("title")) {
-      setDocTitle(getTitleFromMap(map));
+  // Don't render the editor if not authenticated
+  if (!session || status !== "authenticated") {
+    return null;
+  }
+
+  const handleUndo = () => {
+    if (viewRef.current) {
+      undo(viewRef.current.state, viewRef.current.dispatch);
     }
   };
 
-  map.observe(observer);
-  return () => {
-    map.unobserve(observer);
+  const handleRedo = () => {
+    if (viewRef.current) {
+      redo(viewRef.current.state, viewRef.current.dispatch);
+    }
   };
-}, []);
 
+  const handleShare = async () => {
+    const url = window.location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+      alert("Document URL copied to clipboard!");
+    } catch (err) {
+      console.error("Failed to copy URL:", err);
+    }
+  };
+  const ZOOM_LEVELS = [25, 50, 75, 100, 125, 150, 200];
+
+  const handleExport = () => {
+    if (viewRef.current) {
+      const content = viewRef.current.state.doc.textContent;
+      const blob = new Blob([content], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${docTitle}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -296,18 +348,17 @@ useEffect(() => {
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2">
                 <FileText className="w-6 h-6 text-blue-600" />
-                                            <input
-                              type="text"
-                              value={docTitle}
-                              onChange={(e) => {
-                                const newTitle = e.target.value;
-                                setDocTitle(newTitle);
-                                metadataMapRef.current?.set("title", newTitle); // ✅ sync to Y.Map
-                              }}
-                              className="text-lg font-medium bg-transparent border-none outline-none focus:bg-gray-50 px-2 py-1 rounded"
-                              placeholder="Untitled Document"
-                            />
-
+                <input
+                  type="text"
+                  value={docTitle}
+                  onChange={(e) => {
+                    const newTitle = e.target.value;
+                    setDocTitle(newTitle);
+                    metadataMapRef.current?.set("title", newTitle); // ✅ sync to Y.Map
+                  }}
+                  className="text-lg font-medium bg-transparent border-none outline-none focus:bg-gray-50 px-2 py-1 rounded"
+                  placeholder="Untitled Document"
+                />
               </div>
               <div className="flex items-center space-x-2">
                 <div
@@ -361,8 +412,6 @@ useEffect(() => {
                   ))}
                 </select>
 
-
-                
                 <button
                   onClick={handleShare}
                   className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
